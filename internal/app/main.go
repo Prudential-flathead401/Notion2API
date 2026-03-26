@@ -1154,6 +1154,10 @@ func prepareOpenAISSEHeaders(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusOK)
 }
 
+var (
+	chatCompletionInitialFlushDelay = 1500 * time.Millisecond
+)
+
 func writeSSEDone(w http.ResponseWriter, flusher http.Flusher) {
 	_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 	flusher.Flush()
@@ -1294,6 +1298,29 @@ func (a *App) writeChatCompletionLiveStream(w http.ResponseWriter, r *http.Reque
 			return err
 		}
 		return safeWriteComment("keepalive")
+	}
+	stopProactiveFlush := make(chan struct{})
+	defer close(stopProactiveFlush)
+	if chatCompletionInitialFlushDelay <= 0 {
+		_ = startStream()
+	} else {
+		go func() {
+			timer := time.NewTimer(chatCompletionInitialFlushDelay)
+			defer timer.Stop()
+			for {
+				select {
+				case <-r.Context().Done():
+					return
+				case <-stopProactiveFlush:
+					return
+				case <-timer.C:
+					if err := startStream(); err == nil {
+						_ = emitKeepAlive()
+					}
+					return
+				}
+			}
+		}()
 	}
 	result, err := a.runPromptStreamWithSink(r, request, InferenceStreamSink{
 		Text: func(delta string) error {
