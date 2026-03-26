@@ -129,14 +129,6 @@ func (s *SQLiteStore) init() error {
 			UNIQUE(updated_config_id)
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_conversation_session_steps_session_id ON conversation_session_steps(session_id, step_index ASC);`,
-		`CREATE TABLE IF NOT EXISTS conversation_summaries (
-			conversation_id TEXT PRIMARY KEY,
-			fingerprint TEXT NOT NULL DEFAULT '',
-			summary_text TEXT NOT NULL DEFAULT '',
-			covered_message_count INTEGER NOT NULL DEFAULT 0,
-			updated_at TEXT NOT NULL
-		);`,
-		`CREATE INDEX IF NOT EXISTS idx_conversation_summaries_fingerprint ON conversation_summaries(fingerprint);`,
 		`CREATE TABLE IF NOT EXISTS sillytavern_bindings (
 			conversation_id TEXT PRIMARY KEY,
 			profile_key TEXT NOT NULL DEFAULT '',
@@ -281,49 +273,6 @@ func (s *SQLiteStore) DeleteConversation(id string) error {
 	}
 	_, err := s.db.Exec(`DELETE FROM conversations WHERE id = ?`, strings.TrimSpace(id))
 	return err
-}
-
-func (s *SQLiteStore) SaveConversationSummary(summary ConversationMemorySummary) error {
-	if s == nil || s.db == nil || strings.TrimSpace(summary.ConversationID) == "" {
-		return nil
-	}
-	if summary.UpdatedAt.IsZero() {
-		summary.UpdatedAt = time.Now().UTC()
-	}
-	_, err := s.db.Exec(
-		`INSERT INTO conversation_summaries(conversation_id, fingerprint, summary_text, covered_message_count, updated_at)
-		 VALUES(?, ?, ?, ?, ?)
-		 ON CONFLICT(conversation_id) DO UPDATE SET
-		   fingerprint=excluded.fingerprint,
-		   summary_text=excluded.summary_text,
-		   covered_message_count=excluded.covered_message_count,
-		   updated_at=excluded.updated_at`,
-		strings.TrimSpace(summary.ConversationID),
-		strings.TrimSpace(summary.Fingerprint),
-		strings.TrimSpace(summary.SummaryText),
-		maxInt(summary.CoveredMessageCount, 0),
-		summary.UpdatedAt.UTC().Format(time.RFC3339Nano),
-	)
-	return err
-}
-
-func (s *SQLiteStore) LoadConversationSummary(conversationID string) (ConversationMemorySummary, bool, error) {
-	if s == nil || s.db == nil || strings.TrimSpace(conversationID) == "" {
-		return ConversationMemorySummary{}, false, nil
-	}
-	row := s.db.QueryRow(`SELECT conversation_id, fingerprint, summary_text, covered_message_count, updated_at FROM conversation_summaries WHERE conversation_id = ?`, strings.TrimSpace(conversationID))
-	var summary ConversationMemorySummary
-	var updatedAt string
-	if err := row.Scan(&summary.ConversationID, &summary.Fingerprint, &summary.SummaryText, &summary.CoveredMessageCount, &updatedAt); err != nil {
-		if err == sql.ErrNoRows {
-			return ConversationMemorySummary{}, false, nil
-		}
-		return ConversationMemorySummary{}, false, err
-	}
-	if ts, err := time.Parse(time.RFC3339Nano, updatedAt); err == nil {
-		summary.UpdatedAt = ts
-	}
-	return summary, true, nil
 }
 
 func (s *SQLiteStore) DeleteResponsesByConversationOrThread(conversationID string, threadID string) error {

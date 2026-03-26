@@ -368,20 +368,6 @@ func (s *ServerState) invalidateConversationSession(sessionID string, status str
 	}
 }
 
-func (s *ServerState) loadConversationSummary(conversationID string) (*ConversationMemorySummary, error) {
-	s.mu.RLock()
-	store := s.Store
-	s.mu.RUnlock()
-	if store == nil || strings.TrimSpace(conversationID) == "" {
-		return nil, nil
-	}
-	summary, ok, err := store.LoadConversationSummary(conversationID)
-	if err != nil || !ok {
-		return nil, err
-	}
-	return &summary, nil
-}
-
 func (s *ServerState) Close() error {
 	s.mu.RLock()
 	store := s.Store
@@ -915,13 +901,7 @@ func (a *App) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		request.PinnedAccountEmail = requestedAccountEmail(r, payload)
 	}
 	request.ConversationID = firstNonEmpty(strings.TrimSpace(conversation.ID), preferredConversationID)
-	compressedInput, summaryText, coveredCount := a.applyConversationCompression(request.ConversationID, normalized)
-	request.HiddenPrompt = strings.TrimSpace(compressedInput.HiddenPrompt)
-	if strings.TrimSpace(request.UpstreamThreadID) == "" {
-		request.Prompt = compressedInput.Prompt
-	}
 	conversationID := a.startConversationTurn(conversation.ID, preferredConversationID, "api", "chat_completions", resolveRequestPromptForContinuation(normalized), request)
-	a.persistConversationSummary(conversationID, originalFingerprint, summaryText, coveredCount)
 	setConversationIDHeader(w, conversationID)
 	stream, _ := payload["stream"].(bool)
 	if stream {
@@ -975,7 +955,7 @@ func (a *App) handleSillyTavernChatCompletionsPayload(w http.ResponseWriter, r *
 	request := PromptRunRequest{
 		Prompt:             ctx.Normalized.Prompt,
 		LatestUserPrompt:   ctx.LatestPrompt,
-		HiddenPrompt:       ctx.StableHidden,
+		HiddenPrompt:       ctx.RequestHidden,
 		PublicModel:        entry.ID,
 		NotionModel:        entry.NotionModel,
 		ClientProfile:      sillyTavernClientProfile,
@@ -1016,14 +996,7 @@ func (a *App) handleSillyTavernChatCompletionsPayload(w http.ResponseWriter, r *
 	}
 
 	request.ConversationID = firstNonEmpty(strings.TrimSpace(conversation.ID), preferredConversationID)
-	compressedInput, summaryText, coveredCount := a.applyConversationCompression(request.ConversationID, ctx.Normalized)
-	request.HiddenPrompt = strings.TrimSpace(compressedInput.HiddenPrompt)
-	if strings.TrimSpace(request.UpstreamThreadID) == "" {
-		request.Prompt = compressedInput.Prompt
-	}
-
 	conversationID := a.startConversationTurn(conversation.ID, preferredConversationID, "sillytavern", "chat_completions", ctx.DisplayPrompt, request)
-	a.persistConversationSummary(conversationID, originalFingerprint, summaryText, coveredCount)
 	setConversationIDHeader(w, conversationID)
 
 	stream, _ := payload["stream"].(bool)
@@ -1113,13 +1086,7 @@ func (a *App) handleResponses(w http.ResponseWriter, r *http.Request) {
 		request.PinnedAccountEmail = requestedAccountEmail(r, payload)
 	}
 	request.ConversationID = firstNonEmpty(strings.TrimSpace(conversation.ID), preferredConversationID)
-	compressedInput, summaryText, coveredCount := a.applyConversationCompression(request.ConversationID, normalized)
-	request.HiddenPrompt = strings.TrimSpace(compressedInput.HiddenPrompt)
-	if strings.TrimSpace(request.UpstreamThreadID) == "" {
-		request.Prompt = compressedInput.Prompt
-	}
 	conversationID := a.startConversationTurn(conversation.ID, preferredConversationID, "api", "responses", resolveRequestPromptForContinuation(normalized), request)
-	a.persistConversationSummary(conversationID, originalFingerprint, summaryText, coveredCount)
 	setConversationIDHeader(w, conversationID)
 	if stream {
 		a.writeResponsesLiveStream(w, r, request, entry.ID, cfg.DebugUpstream, conversationID)

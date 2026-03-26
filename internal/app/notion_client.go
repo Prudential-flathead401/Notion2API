@@ -3176,6 +3176,10 @@ func (c *NotionAIClient) buildInferencePayload(req PromptRunRequest, threadID st
 	}
 	contextValue["currentDatetime"] = originalDatetime
 	contextValue["surface"] = surface
+	if req.continuationDraft != nil && hiddenPrompt != "" {
+		contextValue["instructions"] = hiddenPrompt
+		contextValue["runtimePromptHint"] = hiddenPrompt
+	}
 	transcript := []map[string]any{}
 	if req.continuationDraft != nil {
 		transcript = append(transcript, buildContinuationBaseTranscript(req.continuationDraft, configValue, contextValue)...)

@@ -34,6 +34,7 @@ type sillyTavernContext struct {
 	LatestPrompt    string
 	DisplayPrompt   string
 	StableHidden    string
+	RequestHidden   string
 	RequestSegments []conversationPromptSegment
 }
 
@@ -63,6 +64,9 @@ func buildSillyTavernContext(payload map[string]any) (sillyTavernContext, error)
 		return sillyTavernContext{}, err
 	}
 	mode := inferSillyTavernMode(payload, normalized)
+	summaryPrompts := collectSillyTavernSummaryPrompts(payload)
+	normalized = stripSillyTavernSummarySegments(normalized, summaryPrompts)
+	requestHidden := appendSillyTavernSummaryToHiddenPrompt(normalized.HiddenPrompt, summaryPrompts)
 	stableHidden := normalizeSillyTavernHiddenPrompt(normalized.HiddenPrompt)
 	latestPrompt := resolveRequestPromptForContinuation(normalized)
 	return sillyTavernContext{
@@ -72,6 +76,7 @@ func buildSillyTavernContext(payload map[string]any) (sillyTavernContext, error)
 		LatestPrompt:    latestPrompt,
 		DisplayPrompt:   firstNonEmpty(strings.TrimSpace(normalized.DisplayPrompt), latestPrompt, strings.TrimSpace(normalized.Prompt)),
 		StableHidden:    stableHidden,
+		RequestHidden:   requestHidden,
 		RequestSegments: normalizeConversationHistorySegments(normalized.Segments),
 	}, nil
 }
@@ -144,6 +149,42 @@ func collectSillyTavernSystemPrompts(payload map[string]any) []string {
 		}
 	}
 	return out
+}
+
+func collectSillyTavernSummaryPrompts(payload map[string]any) []string {
+	items, ok := payload["messages"].([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, raw := range items {
+		msg, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		text := collapseWhitespace(flattenContent(msg["content"]))
+		if !looksLikeSillyTavernSummaryPrompt(text) {
+			continue
+		}
+		out = append(out, strings.TrimSpace(text))
+	}
+	return out
+}
+
+func looksLikeSillyTavernSummaryPrompt(text string) bool {
+	lower := strings.ToLower(collapseWhitespace(text))
+	switch {
+	case strings.HasPrefix(lower, "[summary:") && strings.HasSuffix(lower, "]"):
+		return true
+	case strings.HasPrefix(lower, "summary:"):
+		return true
+	case strings.HasPrefix(lower, "[current summary:") && strings.HasSuffix(lower, "]"):
+		return true
+	case strings.HasPrefix(lower, "current summary:"):
+		return true
+	default:
+		return false
+	}
 }
 
 func looksLikeSillyTavernImpersonate(systemPrompts []string) bool {
@@ -229,6 +270,75 @@ func normalizeSillyTavernHiddenPrompt(hiddenPrompt string) string {
 		kept = append(kept, clean)
 	}
 	return strings.TrimSpace(strings.Join(kept, "\n"))
+}
+
+func stripSillyTavernSummarySegments(normalized NormalizedInput, summaryPrompts []string) NormalizedInput {
+	if len(summaryPrompts) == 0 || len(normalized.Segments) == 0 {
+		return normalized
+	}
+	summarySet := make(map[string]struct{}, len(summaryPrompts))
+	for _, prompt := range summaryPrompts {
+		clean := collapseWhitespace(prompt)
+		if clean == "" {
+			continue
+		}
+		summarySet[clean] = struct{}{}
+	}
+	if len(summarySet) == 0 {
+		return normalized
+	}
+	filtered := make([]conversationPromptSegment, 0, len(normalized.Segments))
+	removed := false
+	for _, segment := range normalized.Segments {
+		if _, ok := summarySet[collapseWhitespace(segment.Text)]; ok {
+			removed = true
+			continue
+		}
+		filtered = append(filtered, segment)
+	}
+	if !removed {
+		return normalized
+	}
+	normalized.Segments = cloneConversationPromptSegments(filtered)
+	normalized.Prompt = rebuildSillyTavernPrompt(filtered, normalized.Attachments)
+	normalized.DisplayPrompt = firstNonEmpty(latestUserConversationSegmentText(filtered), normalized.Prompt)
+	return normalized
+}
+
+func rebuildSillyTavernPrompt(segments []conversationPromptSegment, attachments []InputAttachment) string {
+	hasNonUserHistory := false
+	for _, segment := range segments {
+		if strings.TrimSpace(strings.ToLower(segment.Role)) != "user" {
+			hasNonUserHistory = true
+			break
+		}
+	}
+	prompt := buildConversationPrompt(segments, hasNonUserHistory)
+	if prompt == "" && len(attachments) > 0 {
+		if hasNonUserHistory && len(segments) > 0 {
+			segmentsWithAttachment := append(append([]conversationPromptSegment(nil), segments...), conversationPromptSegment{
+				Role: "user",
+				Text: defaultUploadedAttachmentPrompt,
+			})
+			prompt = buildConversationTranscriptPrompt(segmentsWithAttachment)
+		} else {
+			prompt = defaultUploadedAttachmentPrompt
+		}
+	}
+	return prompt
+}
+
+func appendSillyTavernSummaryToHiddenPrompt(hiddenPrompt string, summaryPrompts []string) string {
+	parts := make([]string, 0, len(summaryPrompts)+1)
+	if clean := strings.TrimSpace(hiddenPrompt); clean != "" {
+		parts = append(parts, clean)
+	}
+	for _, prompt := range summaryPrompts {
+		if clean := strings.TrimSpace(prompt); clean != "" {
+			parts = append(parts, clean)
+		}
+	}
+	return strings.TrimSpace(strings.Join(parts, "\n\n"))
 }
 
 func buildSillyTavernProfileKey(payload map[string]any, stableHidden string) string {
